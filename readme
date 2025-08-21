@@ -1,0 +1,219 @@
+# MyApp - Go + PostgreSQL + Docker
+
+Ứng dụng Go với PostgreSQL chạy trên Docker, được tối ưu cho development trong VS Code.
+
+## 🚀 Quick Start
+
+### 1. Setup ban đầu
+```bash
+# Clone project và cd vào thư mục
+git clone <your-repo>
+cd myapp
+
+# Setup môi trường (tạo .env file)
+make setup
+
+# Cập nhật .env với thông tin của bạn
+nano .env
+```
+
+### 2. Khởi động services
+```bash
+# Khởi động database và pgAdmin
+make up
+
+# Chờ 10 giây để database khởi động hoàn tài
+sleep 10
+
+# Chạy ứng dụng Go
+make run
+```
+
+### 3. Kiểm tra
+- **API Health**: http://localhost:8000/health
+- **API Readiness**: http://localhost:8000/readiness  
+- **Users API**: http://localhost:8000/api/v1/users
+- **pgAdmin**: http://localhost:8080 (admin@myapp.com / admin123)
+
+## 📁 Cấu trúc project
+
+```
+myapp/
+├── docker-compose.yml          # Docker services config
+├── .env                       # Environment variables (local)
+├── .env.example              # Template cho team
+├── Makefile                  # Development commands
+├── main.go                   # Go application
+├── go.mod                    # Go dependencies
+├── docker/
+│   ├── postgres/
+│   │   ├── init/            # Database init scripts
+│   │   └── backup/          # Database backups
+│   └── pgadmin/
+│       └── servers.json     # pgAdmin server config
+├── .vscode/
+│   └── settings.json        # VS Code settings
+└── .gitignore               # Git ignore rules
+```
+
+## 🐘 Database Info
+
+### Connection Details
+- **Host**: localhost
+- **Port**: 5432  
+- **Database**: myapp_db
+- **Username**: admin
+- **Password**: SecurePass123! (đổi trong .env)
+
+### Default Data
+- **Admin User**: admin@myapp.com / admin123
+- **Sample Tables**: users, roles, user_roles, audit_logs
+- **Extensions**: uuid-ossp, pgcrypto, citext
+
+## 🛠️ Development Commands
+
+### Docker & Services
+```bash
+make up          # Start services  
+make down        # Stop services
+make restart     # Restart services
+make logs        # View all logs
+make status      # Show services status
+```
+
+### Database
+```bash
+make db-connect  # Connect to PostgreSQL
+make db-backup   # Backup database
+make db-restore  # Restore from backup
+make db-reset    # Reset database (⚠️ destroys data)
+```
+
+### Application
+```bash
+make run         # Run Go app
+make build       # Build binary
+make test        # Run tests
+make dev         # Start full dev environment
+```
+
+### Health Checks
+```bash
+make health      # Check app health
+make readiness   # Check app readiness
+```
+
+## 🔌 VS Code Integration
+
+### Required Extensions
+- **Docker** (Microsoft)
+- **Database Client** (Weijan Chen)
+- **Go** (Google)
+
+### Database Connection trong VS Code
+1. Mở Command Palette (`Ctrl+Shift+P`)
+2. Gõ: "Database Client: New Connection"
+3. Chọn "PostgreSQL"
+4. Nhập:
+   ```
+   Host: localhost
+   Port: 5432
+   Username: admin
+   Password: SecurePass123!
+   Database: myapp_db
+   ```
+
+## 📊 pgAdmin Web UI
+
+1. Truy cập: http://localhost:8080
+2. Đăng nhập: admin@myapp.com / admin123
+3. Server sẽ tự động kết nối với PostgreSQL
+
+## 🔒 Security Notes
+
+### Development
+- Passwords được hardcode trong .env cho development
+- SSL disabled cho local development
+- Debug mode enabled
+
+### Production  
+- [ ] Thay đổi tất cả passwords
+- [ ] Enable SSL cho database
+- [ ] Set APP_DEBUG=false
+- [ ] Use secrets management
+- [ ] Configure firewall rules
+
+## 🚨 Troubleshooting
+
+### Database Connection Failed
+```bash
+# Kiểm tra containers
+docker-compose ps
+
+# Xem logs PostgreSQL  
+make logs-db
+
+# Reset database
+make db-reset
+```
+
+### Port Conflicts
+```bash
+# Thay đổi ports trong .env
+DB_PORT=5433
+APP_PORT=8001
+PGADMIN_PORT=8081
+```
+
+### VS Code Database Client không kết nối được
+1. Đảm bảo Docker containers đang chạy: `make status`
+2. Test connection: `make db-connect`
+3. Restart VS Code
+4. Reinstall Database Client extension
+
+## 📝 API Endpoints
+
+### Health Checks
+- `GET /health` - Application health status
+- `GET /readiness` - Readiness probe (checks DB connection)
+
+### Users API
+- `GET /api/v1/users` - List users
+- `POST /api/v1/users` - Create user  
+- `GET /api/v1/users/:id` - Get user by ID
+- `PUT /api/v1/users/:id` - Update user
+- `DELETE /api/v1/users/:id` - Delete user
+
+## 🤝 Contributing
+
+1. Copy `.env.example` to `.env` và cập nhật values
+2. Chạy `make setup` để cài đặt dependencies
+3. Chạy `make dev` để start development environment
+4. Make changes và test
+5. Submit Pull Request
+
+## 📈 Performance Tuning
+
+### Database Connection Pool
+```env
+DB_MAX_OPEN_CONNS=25      # Maximum open connections
+DB_MAX_IDLE_CONNS=5       # Maximum idle connections  
+DB_CONN_MAX_LIFETIME=300s # Connection lifetime
+```
+
+### Docker Resources
+```yaml
+# Thêm vào docker-compose.yml nếu cần
+deploy:
+  resources:
+    limits:
+      memory: 512M
+      cpus: '0.5'
+```
+
+## 📞 Support
+
+- **Issues**: Create GitHub issue
+- **Documentation**: Check this README
+- **Database Issues**: Use `make db-connect` to debug
+- **Docker Issues**: Use `make logs` to check logs
