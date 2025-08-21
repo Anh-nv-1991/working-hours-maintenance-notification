@@ -1,0 +1,46 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go build
+/bin/
+/build/
+/dist/
+
+# Dependency
+vendor/
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Env / Config
+
+
+# Database / runtime data
+pgdata/
+*.db
+
+# Docker junk
+*.pid
+*.seed
+*.bak
+
+# Temporary
+*.tmp
+*.temp
+~$*
