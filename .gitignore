@@ -1,46 +1,17 @@
-# Binaries
+# Go
+bin/
 *.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.test
 *.out
+coverage/
+dist/
 
-# Go build
-/bin/
-/build/
-/dist/
-
-# Dependency
-vendor/
-
-# IDE/Editor
+# VS Code
 .vscode/
-.idea/
-*.swp
-*.swo
 
-# OS files
-.DS_Store
-Thumbs.db
+# Env
+.env
+.env.*
+configs/.env
 
-# Logs
-*.log
-
-# Env / Config
-
-
-# Database / runtime data
-pgdata/
-*.db
-
-# Docker junk
-*.pid
-*.seed
-*.bak
-
-# Temporary
-*.tmp
-*.temp
-~$*
+# Docker data (nếu có)
+**/pgdata/

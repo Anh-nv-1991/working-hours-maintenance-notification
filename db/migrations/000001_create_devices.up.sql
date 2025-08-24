@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS devices (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_name ON devices(name);
