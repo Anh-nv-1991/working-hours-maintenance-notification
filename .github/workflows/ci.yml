@@ -56,4 +56,4 @@ jobs:
       - name: Migrate up & down (dry-run on ephemeral DB)
         run: |
           migrate -path db/migrations -database "$DATABASE_URL" up
-          migrate -path db/migrations -database "$DATABASE_URL" down
+          migrate -path db/migrations -database "$DATABASE_URL" down 1
