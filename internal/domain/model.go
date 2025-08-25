@@ -1,6 +1,16 @@
+// internal/domain/model.go
 package domain
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// Thêm 2 hằng số trạng thái
+const (
+	AlertStatusOpen     = "open"
+	AlertStatusServiced = "serviced"
+)
 
 // Device: thiết bị (máy, cảm biến, ...).
 type Device struct {
@@ -35,4 +45,17 @@ type Alert struct {
 	Status     string     `json:"status"` // "open" | "serviced"
 	CreatedAt  time.Time  `json:"created_at"`
 	ServicedAt *time.Time `json:"serviced_at,omitempty"`
+}
+
+// ✅ Method: kiểm tra và trả về message nếu vượt ngưỡng
+func (p Plan) OutOfRangeMessage(v float64) string {
+	if v < p.ThresholdMin || v > p.ThresholdMax {
+		return fmt.Sprintf("Value %.2f out of range [%.2f, %.2f]", v, p.ThresholdMin, p.ThresholdMax)
+	}
+	return ""
+}
+
+// ✅ Method: alert đang open?
+func (a *Alert) IsOpen() bool {
+	return a != nil && a.Status == AlertStatusOpen
 }

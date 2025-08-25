@@ -6,7 +6,8 @@ import (
 	"os"
 
 	db "maint/internal/db/sqlc"
-	"maint/internal/ports"
+	"maint/internal/ports" // <— thêm
+	"maint/internal/repo"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -21,18 +22,23 @@ type Deps struct {
 
 func Init(ctx context.Context) (*Deps, error) {
 	dsn := os.Getenv("DATABASE_URL")
-
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, err
 	}
-	q := db.New(pool)
+
+	q := db.New(pool) // nếu sqlc.New cần pool hoặc conn
+
+	devRepo := repo.NewDeviceRepo(q) // implements ports.DeviceRepo
+	rdRepo := repo.NewReadingRepo(q) // implements ports.ReadingRepo
+	plRepo := repo.NewPlanRepo(q)    // implements ports.PlanRepo
+	alRepo := repo.NewAlertRepo(q)   // implements ports.AlertRepo
 
 	return &Deps{
-		Devices:  q,
-		Readings: q,
-		Plans:    q,
-		Alerts:   q,
+		Devices:  devRepo,
+		Readings: rdRepo,
+		Plans:    plRepo,
+		Alerts:   alRepo,
 		Pool:     pool,
 	}, nil
 }
