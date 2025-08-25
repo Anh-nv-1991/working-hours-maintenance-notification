@@ -27,3 +27,11 @@ Invoke-RestMethod http://localhost:8080/readings/last/1
 # Alerts
 Invoke-RestMethod -Method POST http://localhost:8080/alerts/compute/1
 Invoke-RestMethod -Method POST http://localhost:8080/alerts/1/service
+
+2) Attach vào Container (từ VS Code)
+
+Cách nhanh (terminal):
+
+# tên container xem bằng: docker ps
+docker exec -it working_hours_maintenance_notification-api-1 sh
+docker exec -it working_hours_maintenance_notification-db-1 psql -U postgres
