@@ -1,4 +1,4 @@
-module maint
+module wh-ma
 
 go 1.25.0
 
