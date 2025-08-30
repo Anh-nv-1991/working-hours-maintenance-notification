@@ -28,6 +28,7 @@ type AppConfig struct {
 
 // LoadConfig: đọc .env qua Compose; không dùng thư viện ngoài để giữ gọn
 func LoadConfig() AppConfig {
+	LoadEnvFirst()
 	cfg := AppConfig{
 		AppEnv:      getenv("APP_ENV", "development"),
 		Port:        getenv("PORT", "8080"),
