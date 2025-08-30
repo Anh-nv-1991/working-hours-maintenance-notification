@@ -3,48 +3,44 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
+	"wh-ma/internal/bootstrap"
 )
 
 func main() {
-	_ = godotenv.Load("configs/.env") // chỉ định file
-	dsn := os.Getenv("DATABASE_URL")
-	ctx := context.Background()
+	cfg := bootstrap.LoadConfig()
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
 
-	pool, err := pgxpool.New(ctx, dsn)
+	ctx := context.Background()
+	pool, err := bootstrap.NewPGXPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("db pool: %v", err)
+		log.Fatalf("db connect failed: %v", err)
 	}
 	defer pool.Close()
 
-	if os.Getenv("APP_ENV") == "prod" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-	r := gin.New()
-	r.Use(gin.Recovery(), gin.Logger())
+	r := bootstrap.BuildRouter(cfg, pool)
 
-	r.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true, "env": os.Getenv("APP_ENV")})
-	})
-	r.GET("/readiness", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-		defer cancel()
-		if err := pool.Ping(ctx); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "db": "down"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"ok": true, "db": "up"})
-	})
+	// Start server in goroutine for graceful shutdown
+	errCh := make(chan error, 1)
+	go func() { errCh <- bootstrap.RunHTTP(r, cfg.Port) }()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// Wait for signal
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case sig := <-sigCh:
+		log.Printf("received signal: %v, shutting down...", sig)
+	case err := <-errCh:
+		log.Fatalf("http server error: %v", err)
 	}
-	_ = r.Run(":" + port)
+
+	// Grace period (if you implement http.Server with Shutdown, add here)
+	time.Sleep(300 * time.Millisecond)
 }

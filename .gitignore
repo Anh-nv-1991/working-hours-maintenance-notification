@@ -1,0 +1,17 @@
+# Go
+bin/
+*.exe
+*.out
+coverage/
+dist/
+
+# VS Code
+.vscode/
+
+# Env
+.env
+.env.*
+configs/.env
+
+# Docker data (nếu có)
+**/pgdata/
