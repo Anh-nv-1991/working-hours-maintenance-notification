@@ -1,4 +1,4 @@
-package devicesdomain
+package domain
 
 import "time"
 

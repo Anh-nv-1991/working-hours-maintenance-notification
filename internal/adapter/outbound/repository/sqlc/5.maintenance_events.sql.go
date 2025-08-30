@@ -7,7 +7,47 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const createMaintenanceEvent = `-- name: CreateMaintenanceEvent :one
+INSERT INTO maintenance_events (device_id, at, interval, notes, performed_by, cost)
+VALUES ($1,$2,$3,$4,$5,$6)
+RETURNING id, device_id, at, interval, notes, performed_by, cost, created_at
+`
+
+type CreateMaintenanceEventParams struct {
+	DeviceID    int64              `json:"device_id"`
+	At          pgtype.Timestamptz `json:"at"`
+	Interval    *int32             `json:"interval"`
+	Notes       *string            `json:"notes"`
+	PerformedBy *string            `json:"performed_by"`
+	Cost        pgtype.Numeric     `json:"cost"`
+}
+
+func (q *Queries) CreateMaintenanceEvent(ctx context.Context, arg CreateMaintenanceEventParams) (MaintenanceEvent, error) {
+	row := q.db.QueryRow(ctx, createMaintenanceEvent,
+		arg.DeviceID,
+		arg.At,
+		arg.Interval,
+		arg.Notes,
+		arg.PerformedBy,
+		arg.Cost,
+	)
+	var i MaintenanceEvent
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceID,
+		&i.At,
+		&i.Interval,
+		&i.Notes,
+		&i.PerformedBy,
+		&i.Cost,
+		&i.CreatedAt,
+	)
+	return i, err
+}
 
 const deleteMaintenanceEvent = `-- name: DeleteMaintenanceEvent :exec
 DELETE FROM maintenance_events WHERE id = $1

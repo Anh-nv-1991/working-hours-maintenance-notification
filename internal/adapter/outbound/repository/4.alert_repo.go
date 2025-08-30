@@ -1,0 +1,80 @@
+package repository
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"wh-ma/internal/adapter/outbound/port"
+	dbsqlc "wh-ma/internal/adapter/outbound/repository/sqlc"
+	"wh-ma/internal/domain"
+)
+
+type AlertRepositoryPG struct {
+	q *dbsqlc.Queries
+}
+
+func NewAlertRepository(pool *pgxpool.Pool) *AlertRepositoryPG {
+	return &AlertRepositoryPG{q: dbsqlc.New(pool)}
+}
+
+// compile-time check: đảm bảo implement đúng port
+var _ port.AlertRepository = (*AlertRepositoryPG)(nil)
+
+// Create -> INSERT ... RETURNING
+func (r *AlertRepositoryPG) Create(ctx context.Context, in port.CreateAlertInput) (*domain.Alert, error) {
+	row, err := r.q.CreateAlert(ctx, dbsqlc.CreateAlertParams{
+		DeviceID: int64(in.DeviceID),
+		Type:     in.Type,
+		Message:  in.Message,
+	})
+	if err != nil {
+		return nil, err
+	}
+	al := mapSqlcAlertToDomain(row)
+	return &al, nil
+}
+
+// ListOpenByDevice -> WHERE resolved = false
+func (r *AlertRepositoryPG) ListOpenByDevice(ctx context.Context, deviceID domain.DeviceID, limit, offset int32) ([]*domain.Alert, error) {
+	rows, err := r.q.ListOpenAlertsByDevice(ctx, dbsqlc.ListOpenAlertsByDeviceParams{
+		DeviceID: int64(deviceID),
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.Alert, 0, len(rows))
+	for _, row := range rows {
+		al := mapSqlcAlertToDomain(row)
+		out = append(out, &al)
+	}
+	return out, nil
+}
+
+// Resolve -> UPDATE resolved=true, resolved_at=NOW(), resolved_by=$2
+func (r *AlertRepositoryPG) Resolve(ctx context.Context, in port.ResolveAlertInput) (*domain.Alert, error) {
+	row, err := r.q.ResolveAlert(ctx, dbsqlc.ResolveAlertParams{
+		ID:         in.ID,
+		ResolvedBy: in.ResolvedBy,
+	})
+	if err != nil {
+		return nil, err
+	}
+	al := mapSqlcAlertToDomain(row)
+	return &al, nil
+}
+
+// ===== mapping: sqlc.Alert -> domain.Alert =====
+func mapSqlcAlertToDomain(x dbsqlc.Alert) domain.Alert {
+	// domain.Alert hiện tại không có ResolvedAt/ResolvedBy — nếu cần, thêm vào domain sau.
+	return domain.Alert{
+		ID:        x.ID,
+		DeviceID:  domain.DeviceID(x.DeviceID),
+		Type:      x.Type,
+		Message:   x.Message,
+		CreatedAt: x.CreatedAt.Time, // created_at NOT NULL -> .Time ok
+		Resolved:  x.Resolved,
+	}
+}

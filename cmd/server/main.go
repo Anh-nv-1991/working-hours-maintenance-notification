@@ -1,31 +1,46 @@
-// cmd/server/main.go
 package main
 
 import (
+	"context"
 	"log"
 	"os"
-	healthrouter "wh-ma/internal/adapter/inbound/http/router"
-	"wh-ma/internal/bootstrap"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/joho/godotenv"
+	"wh-ma/internal/bootstrap"
 )
 
 func main() {
-	// Load env (đổi path nếu .env của ACE nằm trong configs/env/.env)
-	_ = godotenv.Load("configs/.env")
+	cfg := bootstrap.LoadConfig()
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
 
-	q, pool := bootstrap.NewDB() // q dùng cho các router khác (devices,…)
-	_ = q
+	ctx := context.Background()
+	pool, err := bootstrap.NewPGXPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("db connect failed: %v", err)
+	}
 	defer pool.Close()
 
-	r := healthrouter.New(pool)
+	r := bootstrap.BuildRouter(cfg, pool)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// Start server in goroutine for graceful shutdown
+	errCh := make(chan error, 1)
+	go func() { errCh <- bootstrap.RunHTTP(r, cfg.Port) }()
+
+	// Wait for signal
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case sig := <-sigCh:
+		log.Printf("received signal: %v, shutting down...", sig)
+	case err := <-errCh:
+		log.Fatalf("http server error: %v", err)
 	}
-	log.Printf("listening on :%s", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatal(err)
-	}
+
+	// Grace period (if you implement http.Server with Shutdown, add here)
+	time.Sleep(300 * time.Millisecond)
 }

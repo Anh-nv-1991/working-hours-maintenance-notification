@@ -1,0 +1,105 @@
+package repository
+
+import (
+	"context"
+	"wh-ma/internal/adapter/outbound/port"
+	dbsqlc "wh-ma/internal/adapter/outbound/repository/sqlc"
+	"wh-ma/internal/domain"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type MaintenanceRepositoryPG struct {
+	q *dbsqlc.Queries
+}
+
+func NewMaintenanceRepository(pool *pgxpool.Pool) *MaintenanceRepositoryPG {
+	return &MaintenanceRepositoryPG{q: dbsqlc.New(pool)}
+}
+
+// compile-time check
+var _ port.MaintenanceRepository = (*MaintenanceRepositoryPG)(nil)
+
+func (r *MaintenanceRepositoryPG) Create(ctx context.Context, in port.CreateMaintenanceInput) (*domain.MaintenanceEvent, error) {
+	var at pgtype.Timestamptz
+	at.Time, at.Valid = in.At, true
+
+	var cost pgtype.Numeric
+	if in.Cost != nil {
+		// Set from text để giữ chính xác số thập phân
+		if err := cost.Scan(*in.Cost); err != nil {
+			return nil, err
+		}
+		cost.Valid = true
+	}
+
+	params := dbsqlc.CreateMaintenanceEventParams{
+		DeviceID:    int64(in.DeviceID),
+		At:          at,
+		Interval:    in.Interval,    // *int32
+		Notes:       in.Notes,       // *string
+		PerformedBy: in.PerformedBy, // *string
+		Cost:        cost,           // Numeric
+	}
+
+	row, err := r.q.CreateMaintenanceEvent(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	out := mapSqlcMaintenanceToDomain(row)
+	return &out, nil
+}
+
+func (r *MaintenanceRepositoryPG) Delete(ctx context.Context, id int64) error {
+	return r.q.DeleteMaintenanceEvent(ctx, id)
+}
+
+func (r *MaintenanceRepositoryPG) ListByDevice(ctx context.Context, deviceID domain.DeviceID, limit, offset int32) ([]*domain.MaintenanceEvent, error) {
+	rows, err := r.q.ListMaintenanceByDevice(ctx, dbsqlc.ListMaintenanceByDeviceParams{
+		DeviceID: int64(deviceID),
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.MaintenanceEvent, 0, len(rows))
+	for _, row := range rows {
+		ev := mapSqlcMaintenanceToDomain(row)
+		out = append(out, &ev)
+	}
+	return out, nil
+}
+
+// ===== mapping: sqlc.MaintenanceEvent -> domain.MaintenanceEvent =====
+func mapSqlcMaintenanceToDomain(x dbsqlc.MaintenanceEvent) domain.MaintenanceEvent {
+	var interval int
+	if x.Interval != nil {
+		interval = int(*x.Interval)
+	}
+
+	// Cost: nếu ACE muốn đưa về float64, có thể dùng .Float(…)
+	// Nhưng lưu ý sai số; tốt nhất giữ string trong layer ngoài.
+	// Ví dụ (không khuyến nghị cho tiền tệ):
+	// f, _ := x.Cost.Float64Value()
+	// costFloat := f.Float64
+
+	return domain.MaintenanceEvent{
+		ID:          x.ID,
+		DeviceID:    domain.DeviceID(x.DeviceID),
+		At:          x.At.Time,
+		Interval:    interval,
+		Notes:       derefOrEmpty(x.Notes),
+		PerformedBy: derefOrEmpty(x.PerformedBy),
+		// Cost: bỏ qua trong domain nếu đang là float64; hoặc thêm trường CostText string
+	}
+}
+
+func derefOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}

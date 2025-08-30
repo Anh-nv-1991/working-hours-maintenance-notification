@@ -13,7 +13,7 @@ git log --oneline --graph    # xem lịch sử commit gọn
 # --- STAGE + COMMIT ---
 git add <file>               # stage 1 file
 git add .                    # stage tất cả
-git commit -m "step 5 -devices add working hours"     # commit với message
+git commit -m "remake to step 5- generate sqlc and demo run"     # commit với message
 
 # --- BRANCH ---
 git branch                   # liệt kê branch
