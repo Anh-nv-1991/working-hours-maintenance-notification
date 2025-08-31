@@ -3,36 +3,40 @@ package bootstrap
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"wh-ma/internal/adapter/inbound/http/handler"
-	health "wh-ma/internal/adapter/inbound/http/health"
 	"wh-ma/internal/adapter/inbound/http/router"
 	outrepo "wh-ma/internal/adapter/outbound/repository"
 	"wh-ma/internal/usecase"
 )
+
+// ===== Config =====
 
 type AppConfig struct {
 	AppEnv      string
 	Port        string
 	DatabaseURL string
 	AllowOrigin []string
+	LogLevel    string
 }
 
-// LoadConfig: đọc .env qua Compose; không dùng thư viện ngoài để giữ gọn
 func LoadConfig() AppConfig {
 	LoadEnvFirst()
 	cfg := AppConfig{
 		AppEnv:      getenv("APP_ENV", "development"),
 		Port:        getenv("PORT", "8080"),
 		DatabaseURL: getenv("DATABASE_URL", ""),
+		LogLevel:    getenv("LOG_LEVEL", "info"),
 	}
 	origins := getenv("CORS_ORIGINS", "*")
 	if origins == "" {
@@ -50,7 +54,8 @@ func getenv(k, def string) string {
 	return def
 }
 
-// NewPGXPool: khởi tạo pool và Ping để chắc chắn DB sống
+// ===== DB Pool =====
+
 func NewPGXPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
@@ -69,61 +74,63 @@ func NewPGXPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// BuildRouter: tạo Gin router, middleware, health, mount modules
-func BuildRouter(cfg AppConfig, pool *pgxpool.Pool) *gin.Engine {
-	if cfg.AppEnv == "production" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+// ===== HTTP wiring (router layer định nghĩa endpoints) =====
 
-	// CORS
-	c := cors.DefaultConfig()
-	if len(cfg.AllowOrigin) == 1 && cfg.AllowOrigin[0] == "*" {
-		c.AllowAllOrigins = true
-	} else {
-		c.AllowOrigins = cfg.AllowOrigin
-	}
-	c.AllowHeaders = []string{"Authorization", "Content-Type"}
-	c.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-	r.Use(cors.New(c))
-
-	// Health/Readiness
-	hh := health.NewHandler(pool)
-	r.GET("/healthz", hh.Liveness)    // liveness: không ping DB, trả uptime & timestamp
-	r.GET("/readiness", hh.Readiness) // readiness: ping DB với timeout ngắn
-
-	// Outbound repos (PG/sqlc)
+func BuildRouter(cfg AppConfig, pool *pgxpool.Pool, baseLogger *slog.Logger) *gin.Engine {
+	// 1) Repos
 	devRepo := outrepo.NewDeviceRepository(pool)
 	planRepo := outrepo.NewPlanRepository(pool)
 	alertRepo := outrepo.NewAlertRepository(pool)
-	// (sẵn sàng cho phần khác) readRepo := outrepo.NewReadingRepository(pool)
-	// (sẵn sàng cho phần khác) mntRepo  := outrepo.NewMaintenanceRepository(pool)
 
-	// Usecases (inbound implementations)
+	// 2) Usecases
 	devUC := usecase.NewDevicesUsecase(devRepo, planRepo, alertRepo)
 
-	// Handlers
+	// 3) Handlers
 	devH := handler.NewDevicesHandler(devUC)
 
-	// Router groups
+	// 4) Router gốc (đã gắn Recovery, RequestID, Logger, CORS, Prometheus, healthz/readiness, /metrics)
+	r := router.New(pool, baseLogger, router.Options{
+		AppEnv:      cfg.AppEnv,
+		AllowOrigin: cfg.AllowOrigin,
+	})
+
+	// 5) Mount modules vào /api
 	api := r.Group("/api")
 	router.MountDevices(api, devH)
-
-	// Optional: versioning
-	// v1 := r.Group("/api/v1")
-	// router.MountDevices(v1, devH)
 
 	return r
 }
 
-// RunHTTP: chạy server kèm graceful shutdown
+// RunHTTP: chạy server với graceful shutdown
 func RunHTTP(r *gin.Engine, port string) error {
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("HTTP listening on :%s", port)
-	return srv.ListenAndServe()
+
+	// Start server
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("HTTP listening on :%s", port)
+		errCh <- srv.ListenAndServe()
+	}()
+
+	// Wait signal
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case sig := <-stop:
+		log.Printf("shutdown signal: %s", sig)
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+	}
+
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return srv.Shutdown(ctx)
 }

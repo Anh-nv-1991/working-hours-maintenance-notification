@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -21,9 +22,17 @@ func NewDevicesHandler(svc inport.DevicesInbound) *DevicesHandler {
 
 // POST /devices
 func (h *DevicesHandler) Create(c *gin.Context) {
+	done := observe(c, "CreateDevice")
+	status := http.StatusCreated
+	var errMsg string
+	defer func() {
+		done(slog.Int("status", status), slog.String("error", errMsg))
+	}()
 	var in request.CreateDevice
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status = http.StatusBadRequest
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
 	var planID *domain.PlanID
@@ -44,7 +53,9 @@ func (h *DevicesHandler) Create(c *gin.Context) {
 	}
 	dev, err := h.svc.Create(c, cmd)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status = http.StatusBadRequest
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
 	c.JSON(http.StatusCreated, dev)
@@ -52,40 +63,94 @@ func (h *DevicesHandler) Create(c *gin.Context) {
 
 // GET /devices/:id
 func (h *DevicesHandler) Get(c *gin.Context) {
-	id, ok := parseDeviceID(c)
+	done := observe(c, "GetDevice")
+	status := http.StatusOK
+	var errMsg string
+	var id domain.DeviceID
+
+	defer func() {
+		done(
+			slog.Int("status", status),
+			slog.String("error", errMsg),
+			slog.Int64("device_id", int64(id)),
+		)
+	}()
+
+	var ok bool
+	id, ok = parseDeviceID(c)
 	if !ok {
-		return
+		status = http.StatusBadRequest
+		errMsg = "invalid id"
+		return // parseDeviceID đã trả JSON 400 rồi
 	}
+
 	dev, err := h.svc.Get(c, id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		status = http.StatusNotFound
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
-	c.JSON(http.StatusOK, dev)
+	c.JSON(status, dev)
 }
 
 // GET /devices
 func (h *DevicesHandler) List(c *gin.Context) {
+	done := observe(c, "ListDevices")
+	status := http.StatusOK
+	var errMsg string
 	limit, offset := parsePaging(c, 50, 0)
+
+	defer func() {
+		done(
+			slog.Int("status", status),
+			slog.String("error", errMsg),
+			slog.Int("limit", int(limit)),
+			slog.Int("offset", int(offset)),
+		)
+	}()
+
 	devs, err := h.svc.List(c, limit, offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		status = http.StatusInternalServerError
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": devs, "limit": limit, "offset": offset})
+	c.JSON(status, gin.H{"items": devs, "limit": limit, "offset": offset})
 }
 
 // PATCH /devices/:id
 func (h *DevicesHandler) UpdateBasic(c *gin.Context) {
-	id, ok := parseDeviceID(c)
+	done := observe(c, "UpdateDeviceBasic")
+	status := http.StatusOK
+	var errMsg string
+	var id domain.DeviceID
+
+	defer func() {
+		done(
+			slog.Int("status", status),
+			slog.String("error", errMsg),
+			slog.Int64("device_id", int64(id)),
+		)
+	}()
+
+	var ok bool
+	id, ok = parseDeviceID(c)
 	if !ok {
+		status = http.StatusBadRequest
+		errMsg = "invalid id"
 		return
 	}
+
 	var in request.UpdateBasic
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status = http.StatusBadRequest
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
+
 	cmd := dto.UpdateDeviceBasicCmd{
 		ID:       id,
 		Name:     in.Name,
@@ -94,48 +159,96 @@ func (h *DevicesHandler) UpdateBasic(c *gin.Context) {
 	}
 	dev, err := h.svc.UpdateBasic(c, cmd)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status = http.StatusBadRequest
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
-	c.JSON(http.StatusOK, dev)
+	c.JSON(status, dev)
 }
 
 // PATCH /devices/:id/plan
 func (h *DevicesHandler) UpdatePlan(c *gin.Context) {
-	id, ok := parseDeviceID(c)
+	done := observe(c, "UpdateDevicePlan")
+	status := http.StatusOK
+	var errMsg string
+	var id domain.DeviceID
+	var planID *domain.PlanID
+
+	defer func() {
+		attrs := []slog.Attr{
+			slog.Int("status", status),
+			slog.String("error", errMsg),
+			slog.Int64("device_id", int64(id)),
+		}
+		if planID != nil {
+			attrs = append(attrs, slog.Int64("plan_id", int64(*planID)))
+		}
+		done(attrs...)
+	}()
+
+	var ok bool
+	id, ok = parseDeviceID(c)
 	if !ok {
+		status = http.StatusBadRequest
+		errMsg = "invalid id"
 		return
 	}
+
 	var in request.UpdatePlan
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status = http.StatusBadRequest
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
-	var planID *domain.PlanID
+
 	if in.PlanID != nil {
 		v := domain.PlanID(*in.PlanID)
 		planID = &v
 	}
+
 	cmd := dto.UpdateDevicePlanCmd{ID: id, PlanID: planID}
 	dev, err := h.svc.UpdatePlan(c, cmd)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status = http.StatusBadRequest
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
-	c.JSON(http.StatusOK, dev)
+	c.JSON(status, dev)
 }
 
 // DELETE /devices/:id (soft delete)
 func (h *DevicesHandler) SoftDelete(c *gin.Context) {
-	id, ok := parseDeviceID(c)
+	done := observe(c, "SoftDeleteDevice")
+	status := http.StatusNoContent
+	var errMsg string
+	var id domain.DeviceID
+
+	defer func() {
+		done(
+			slog.Int("status", status),
+			slog.String("error", errMsg),
+			slog.Int64("device_id", int64(id)),
+		)
+	}()
+
+	var ok bool
+	id, ok = parseDeviceID(c)
 	if !ok {
+		status = http.StatusBadRequest
+		errMsg = "invalid id"
 		return
 	}
+
 	if err := h.svc.SoftDelete(c, id); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status = http.StatusBadRequest
+		errMsg = err.Error()
+		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
-	c.Status(http.StatusNoContent)
+	c.Status(status) // 204
 }
 
 // ===== helpers =====
@@ -150,20 +263,29 @@ func parseDeviceID(c *gin.Context) (domain.DeviceID, bool) {
 	return domain.DeviceID(uri.ID), true
 }
 func parsePaging(c *gin.Context, defLimit, defOffset int32) (int32, int32) {
-	type q struct {
-		Limit, Offset *int32 `form:"limit,offset"`
-	}
-	var qq struct {
+	var in struct {
 		Limit  *int32 `form:"limit"`
 		Offset *int32 `form:"offset"`
 	}
-	_ = c.ShouldBindQuery(&qq)
+	_ = c.ShouldBindQuery(&in)
+
 	limit, offset := defLimit, defOffset
-	if qq.Limit != nil {
-		limit = *qq.Limit
+	if in.Limit != nil {
+		limit = *in.Limit
 	}
-	if qq.Offset != nil {
-		offset = *qq.Offset
+	if in.Offset != nil {
+		offset = *in.Offset
+	}
+
+	// (tuỳ chọn) ràng buộc an toàn
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	return limit, offset
 }

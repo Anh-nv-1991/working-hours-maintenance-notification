@@ -2,45 +2,49 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"wh-ma/internal/adapter/inbound/http/middleware"
 	"wh-ma/internal/bootstrap"
 )
 
 func main() {
 	cfg := bootstrap.LoadConfig()
 	if cfg.DatabaseURL == "" {
-		log.Fatal("DATABASE_URL is required")
+		panic("DATABASE_URL is required")
 	}
 
 	ctx := context.Background()
 	pool, err := bootstrap.NewPGXPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("db connect failed: %v", err)
+		panic("db connect failed: " + err.Error())
 	}
 	defer pool.Close()
 
-	r := bootstrap.BuildRouter(cfg, pool)
+	// 1) Tạo logger JSON theo LOG_LEVEL
+	baseLogger := middleware.NewBaseLogger()
 
-	// Start server in goroutine for graceful shutdown
+	// 2) Build router với middleware logger
+	r := bootstrap.BuildRouter(cfg, pool, baseLogger)
+
+	// 3) Chạy server trong goroutine
 	errCh := make(chan error, 1)
 	go func() { errCh <- bootstrap.RunHTTP(r, cfg.Port) }()
 
-	// Wait for signal
+	// 4) Bắt tín hiệu dừng
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
 	case sig := <-sigCh:
-		log.Printf("received signal: %v, shutting down...", sig)
+		baseLogger.Info("server.shutdown.signal", "sig", sig)
 	case err := <-errCh:
-		log.Fatalf("http server error: %v", err)
+		baseLogger.Error("server.http.error", "err", err)
 	}
 
-	// Grace period (if you implement http.Server with Shutdown, add here)
+	// grace sleep
 	time.Sleep(300 * time.Millisecond)
 }

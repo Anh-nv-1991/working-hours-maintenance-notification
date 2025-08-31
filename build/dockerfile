@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1.7-labs
+
+# ---- deps stage: cache go mod ----
+FROM golang:1.25 AS deps
+WORKDIR /src
+ENV GOFLAGS="-buildvcs=false"
+COPY go.mod go.sum ./
+# cache modules để lần sau không tải lại
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+# ---- build stage: cache compile ----
+FROM golang:1.25 AS builder
+WORKDIR /src
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS="-buildvcs=false"
+
+# copy mod cache từ stage deps (tùy – giúp nóng cache ngay)
+COPY --from=deps /go/pkg /go/pkg
+
+# chỉ copy phần còn lại sau khi deps đã sẵn sàng
+COPY . .
+
+# cache go-build (biên dịch) + mod (nếu có phát sinh)
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+
+# ---- run stage ----
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /app
+USER nonroot:nonroot
+ENV PORT=8080
+COPY --from=builder /out/server /app/server
+EXPOSE 8080
+ENTRYPOINT ["/app/server"]
