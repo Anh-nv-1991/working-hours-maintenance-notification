@@ -40,3 +40,35 @@ docker compose up -d api
 
 docker compose build api
 docker compose up -d api
+
+//============Khởi động dự án trên local
+🔹 1. Chạy host local (máy ACE trực tiếp, không Docker API)
+
+👉 Dùng khi ACE đang dev code Go, muốn chạy nhanh.
+
+Bước 1: Chạy Postgres bằng Docker (nếu chưa có DB local)
+docker compose up db
+
+Bước 2: Chạy API trực tiếp bằng Go CLI
+go run ./cmd/server
+
+
+📌 Trường hợp cần migrate DB trước:
+
+migrate -path db/migrations -database "postgres://user:pass@localhost:5432/dbname?sslmode=disable" up
+
+
+🔹 2. Chạy toàn bộ trong Docker (API + DB)
+
+👉 Dùng khi muốn test như production hoặc deploy.
+
+Bước 1: Build lại image (nếu code thay đổi)
+docker compose build
+
+Bước 2: Chạy API + DB
+docker compose up
+
+
+📌 Thêm -d nếu muốn chạy background:
+
+docker compose up -d
