@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"wh-ma/internal/adapter/inbound/http/metrics"
 	"wh-ma/internal/adapter/inbound/http/request"
 	inport "wh-ma/internal/adapter/inbound/port"
 	"wh-ma/internal/domain"
@@ -58,6 +59,7 @@ func (h *DevicesHandler) Create(c *gin.Context) {
 		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
+	metrics.DeviceCreatedTotal.Inc()
 	c.JSON(http.StatusCreated, dev)
 }
 
@@ -117,6 +119,7 @@ func (h *DevicesHandler) List(c *gin.Context) {
 		c.JSON(status, gin.H{"error": errMsg})
 		return
 	}
+	metrics.DeviceListTotal.Inc()
 	c.JSON(status, gin.H{"items": devs, "limit": limit, "offset": offset})
 }
 

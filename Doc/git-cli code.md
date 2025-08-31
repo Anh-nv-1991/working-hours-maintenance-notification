@@ -13,7 +13,7 @@ git log --oneline --graph    # xem lịch sử commit gọn
 # --- STAGE + COMMIT ---
 git add <file>               # stage 1 file
 git add .                    # stage tất cả
-git commit -m "remake to devices complete"     # commit với message
+git commit -m "devices// add metrics and request observer"     # commit với message
 
 # --- BRANCH ---
 git branch                   # liệt kê branch
