@@ -2,7 +2,7 @@
 
 ### 1. **Truy cập vào PostgreSQL trong Docker**
 
-`docker exec -it wh-ma-db psql -U admin -d main-1`
+`docker exec -it wh-ma-db-1 psql -U admin -d main-1`
 
 - **container_name**: Tên hoặc ID của container PostgreSQL.
 

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -61,6 +62,8 @@ func NewPGXPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
+	cfg.ConnConfig.Tracer = otelpgx.NewTracer()
+
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err

@@ -2,49 +2,42 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"wh-ma/internal/adapter/inbound/http/middleware"
+	mw "wh-ma/internal/adapter/inbound/http/middleware"
 	"wh-ma/internal/bootstrap"
 )
 
 func main() {
-	cfg := bootstrap.LoadConfig()
-	if cfg.DatabaseURL == "" {
-		panic("DATABASE_URL is required")
-	}
+	// 1) Context + signal
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	ctx := context.Background()
+	// 2) Load config (đã có trong bootstrap)
+	cfg := bootstrap.LoadConfig()
+
+	// 3) Init OpenTelemetry (CẤY Ở ĐÂY)
+	// Hàm này nằm ở internal/bootstrap/otel.go (anh thêm theo mẫu trước đó)
+	tr := bootstrap.InitTracing(ctx, "wh-ma-api")
+	defer func() { _ = tr.Shutdown(ctx) }()
+
+	// 4) DB pool (nếu đã gắn tracer trong NewPGXPool thì mọi query sẽ có span)
 	pool, err := bootstrap.NewPGXPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		panic("db connect failed: " + err.Error())
-	}
-	defer pool.Close()
-
-	// 1) Tạo logger JSON theo LOG_LEVEL
-	baseLogger := middleware.NewBaseLogger()
-
-	// 2) Build router với middleware logger
-	r := bootstrap.BuildRouter(cfg, pool, baseLogger)
-
-	// 3) Chạy server trong goroutine
-	errCh := make(chan error, 1)
-	go func() { errCh <- bootstrap.RunHTTP(r, cfg.Port) }()
-
-	// 4) Bắt tín hiệu dừng
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	select {
-	case sig := <-sigCh:
-		baseLogger.Info("server.shutdown.signal", "sig", sig)
-	case err := <-errCh:
-		baseLogger.Error("server.http.error", "err", err)
+		log.Fatalf("db connect: %v", err)
 	}
 
-	// grace sleep
-	time.Sleep(300 * time.Millisecond)
+	// 5) Router
+	r := bootstrap.BuildRouter(cfg, pool, nil)
+
+	// 6) OTel HTTP middleware của anh (đảm bảo có span cho mọi route)
+	r.Use(mw.OTelMiddleware("wh-ma-api"))
+
+	// 7) Run HTTP (graceful)
+	if err := bootstrap.RunHTTP(r, cfg.Port); err != nil {
+		log.Fatalf("http: %v", err)
+	}
 }

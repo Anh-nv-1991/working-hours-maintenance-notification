@@ -4,6 +4,7 @@
 FROM golang:1.25 AS base
 WORKDIR /src
 COPY go.mod go.sum ./
+RUN go version
 RUN go mod download
 
 # 2) Builder: build nhị phân

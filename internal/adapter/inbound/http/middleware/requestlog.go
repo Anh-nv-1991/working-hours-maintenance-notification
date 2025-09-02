@@ -3,104 +3,94 @@ package middleware
 import (
 	"context"
 	"log/slog"
-	"net"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
-type ctxKey string
+type ctxLoggerKey struct{}
 
-const LoggerKey ctxKey = "logger"
+const ginCtxLoggerKey = "logger"
 
-// NewBaseLogger tạo logger gốc theo LOG_LEVEL (env) và output JSON.
-func NewBaseLogger() *slog.Logger {
-	level := slog.LevelInfo
-	switch strings.ToLower(os.Getenv("LOG_LEVEL")) {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
-}
-
-// RequestLogMiddleware:
-// - đảm bảo có X-Request-ID (tạo nếu client không gửi)
-// - đưa logger vào context, đính kèm field cơ bản
-// - log access line ở cuối (status, latency, size)
+// Ghi log cho mỗi request; không crash nếu base == nil.
+// Tự đính kèm trace_id/span_id nếu OTel đã init.
+// Đồng thời gắn logger vào cả gin.Context lẫn request.Context().
 func RequestLogMiddleware(base *slog.Logger) gin.HandlerFunc {
+	if base == nil {
+		base = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}))
+	}
+
 	return func(c *gin.Context) {
-		// đảm bảo đã có request id
-		reqID := requestid.Get(c)
 		start := time.Now()
+		reqID := requestid.Get(c)
 
 		route := c.FullPath()
 		if route == "" {
 			route = c.Request.URL.Path
 		}
 
-		ip := clientIP(c)
-		userAgent := c.Request.UserAgent()
-
-		// logger cho request hiện tại
 		l := base.With(
 			"request_id", reqID,
 			"method", c.Request.Method,
 			"route", route,
-			"ip", ip,
+			"ip", c.ClientIP(),
+			"ua", c.Request.UserAgent(),
 		)
 
-		// đưa logger vào context chuẩn
-		ctx := context.WithValue(c.Request.Context(), LoggerKey, l)
+		// Correlate với OTel nếu có span hiện hành
+		if span := oteltrace.SpanFromContext(c.Request.Context()); span != nil {
+			sc := span.SpanContext()
+			if sc.HasTraceID() {
+				l = l.With(
+					"trace_id", sc.TraceID().String(),
+					"span_id", sc.SpanID().String(),
+				)
+			}
+		}
+
+		// Cho phép handler khác lấy logger
+		c.Set(ginCtxLoggerKey, l)
+		ctx := context.WithValue(c.Request.Context(), ctxLoggerKey{}, l)
 		c.Request = c.Request.WithContext(ctx)
 
-		// log start ở mức debug (không ồn khi level >= info)
-		l.Debug("request.start", "ua", userAgent)
-
-		// chạy các handler tiếp theo
 		c.Next()
 
 		latency := time.Since(start)
-		status := c.Writer.Status()
-		size := c.Writer.Size()
-
-		// access log: 1 dòng/tác vụ
 		l.Info("request.done",
-			"status", status,
-			"latency_ms", latency.Milliseconds(),
-			"size", size,
-			"err", strings.Join(c.Errors.Errors(), "; "),
+			slog.Int("status", c.Writer.Status()),
+			slog.Int("size", c.Writer.Size()),
+			slog.Int64("latency_ms", latency.Milliseconds()),
+			slog.String("err", strings.Join(c.Errors.Errors(), "; ")),
 		)
 	}
 }
 
-// GetLogger rút logger từ context. Nếu thiếu, trả base để không nil.
-func GetLogger(ctx context.Context, fallback *slog.Logger) *slog.Logger {
-	if v := ctx.Value(LoggerKey); v != nil {
-		if l, ok := v.(*slog.Logger); ok {
+// GetLogger trả logger từ *gin.Context (fallback stdout nếu thiếu).
+func GetLogger(c *gin.Context) *slog.Logger {
+	if v, ok := c.Get(ginCtxLoggerKey); ok {
+		if l, ok2 := v.(*slog.Logger); ok2 && l != nil {
 			return l
 		}
 	}
-	return fallback
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}))
 }
 
-// clientIP lấy IP thực tế, tôn trọng X-Forwarded-For nếu có reverse proxy.
-func clientIP(c *gin.Context) string {
-	// Ưu tiên X-Forwarded-For (chuỗi ip, lấy ip đầu)
-	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
+// CtxLogger trả logger từ context.Context (dùng cho các chỗ chỉ có ctx).
+// Nếu không tìm thấy thì trả fallback; nếu fallback nil thì trả stdout logger.
+func CtxLogger(ctx context.Context, fallback *slog.Logger) *slog.Logger {
+	if ctx != nil {
+		if v := ctx.Value(ctxLoggerKey{}); v != nil {
+			if l, ok := v.(*slog.Logger); ok && l != nil {
+				return l
+			}
+		}
 	}
-	// Fallback: RemoteAddr
-	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
-	if err != nil {
-		return c.ClientIP() // gin đã cố gắng parse giúp
+	if fallback != nil {
+		return fallback
 	}
-	return host
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}))
 }

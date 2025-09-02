@@ -1,61 +1,75 @@
 services:
+  api:
+    build:
+      context: .
+      dockerfile: ./build/Dockerfile
+    env_file:
+      - ./configs/.env  # ⬅ chọn file env theo biến
+    depends_on:
+      db:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.118.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ${OTEL_CONFIG_FILE:-./configs/otel-collector.dev.yaml}:/etc/otel-collector-config.yaml:ro  # ⬅ chọn config theo biến
+    ports:
+      - "4318:4318"
+      - "4317:4317"
+      - "13133:13133"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:13133/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"
+    restart: unless-stopped
+
   db:
     image: postgres:16
-    container_name: wh-ma-db
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: Vietanh4791
       POSTGRES_DB: main-1
+    volumes:
+      - dbdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U admin -d main-1"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d main-1"]
       interval: 10s
       timeout: 5s
       retries: 5
-    volumes:
-      - dbdata:/var/lib/postgresql/data
 
-  # sqlc codegen (one-off khi cần)
-  sqlc:
-    image: golang:1.22
-    working_dir: /app
-    volumes:
-      - ./:/app
-    entrypoint: ["/bin/sh","-lc"]
-    command: >
-      go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0 &&
-      /go/bin/sqlc generate
-
-  # chạy migrate kiểu one-off: docker compose run --rm migrate -path /migrations -database "$DATABASE_URL" up
   migrate:
-    image: migrate/migrate:latest
-    container_name: wh-ma-migrate
+    image: migrate/migrate:4
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://admin:Vietanh4791@db:5432/main-1?sslmode=disable
-    volumes:
-      - ./db/migrations:/migrations
-
-  api:
-    build:
-      context: .
-      dockerfile: ./build/Dockerfile   # << trỏ rõ file, tránh lỗi "open Dockerfile"
     env_file:
       - ./configs/.env
-    environment:
-      # override cho container: trỏ tới 'db' (không dùng localhost)
-      DATABASE_URL: postgres://admin:Vietanh4791@db:5432/main-1?sslmode=disable
-      PORT: "8080"
-      APP_ENV: "docker"
-      LOG_LEVEL: "debug"
-    ports:
-      - "8080:8080"
-    depends_on:
-      db:
-        condition: service_healthy
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint: ["sh","-c","migrate -path=/migrations -database $${DATABASE_URL} up"]
 
 volumes:
   dbdata: {}

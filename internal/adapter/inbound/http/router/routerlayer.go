@@ -38,6 +38,7 @@ func New(p *pgxpool.Pool, baseLogger *slog.Logger, opt Options) *gin.Engine {
 	// Middlewares nền tảng
 	r.Use(gin.Recovery())
 	r.Use(requestid.New())
+	r.Use(middleware.OTelMiddleware("wh-ma-api"))
 	r.Use(middleware.RequestLogMiddleware(baseLogger)) // logger có request-id
 	r.Use(middleware.PrometheusHTTP())                 // đo count/latency/status cho mọi request
 

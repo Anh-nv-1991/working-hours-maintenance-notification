@@ -1,0 +1,65 @@
+receivers:
+  otlp:
+    protocols:
+      http: { endpoint: 0.0.0.0:4318 }
+      grpc: { endpoint: 0.0.0.0:4317 }
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 15
+  attributes/scrub:
+    actions:
+      - key: db.statement
+        action: delete
+      - key: http.request.header.authorization
+        action: delete
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    expected_new_traces_per_sec: 1000
+    policies:
+      - name: errors
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: slow_traces
+        type: latency
+        latency: { threshold_ms: 500 }
+      - name: devices_routes
+        type: string_attribute
+        string_attribute:
+          key: http.route
+          values: ["/api/devices", "/api/devices/*"]
+      - name: baseline
+        type: probabilistic
+        probabilistic: { sampling_percentage: 10 }
+  batch: {}
+
+exporters:
+  otlp:     # → Jaeger qua OTLP gRPC (4317)
+    endpoint: jaeger:4317
+    tls: { insecure: true }
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+      max_elapsed_time: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 2048
+  debug: { verbosity: normal }   # có thể tắt sau
+
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
+  pprof: {}
+  zpages: {}
+
+service:
+  extensions: [health_check, pprof, zpages]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, tail_sampling, batch]
+      exporters: [otlp, debug]

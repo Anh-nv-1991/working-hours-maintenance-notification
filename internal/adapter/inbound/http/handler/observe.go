@@ -19,29 +19,33 @@ func toArgs(attrs []slog.Attr) []any {
 	return out
 }
 
-// getLogger: lấy logger từ middleware (đúng chữ ký) với fallback base logger
+// Lấy logger từ context (đã được middleware gắn); fallback = slog.Default()
 func getLogger(ctx context.Context) *slog.Logger {
-	base := slog.Default() // hoặc middleware.NewBaseLogger() nếu ACE đã có
-	return middleware.GetLogger(ctx, base)
+	return middleware.CtxLogger(ctx, slog.Default())
 }
 
 func observe(c *gin.Context, op string) (done func(attrs ...slog.Attr)) {
 	logger := getLogger(c.Request.Context())
 	start := time.Now()
 
+	route := c.FullPath()
+	if route == "" {
+		route = c.Request.URL.Path
+	}
+
 	logger.Info("start "+op,
 		slog.String("method", c.Request.Method),
-		slog.String("path", c.FullPath()),
+		slog.String("path", route),
 	)
 
 	return func(attrs ...slog.Attr) {
 		base := []slog.Attr{
 			slog.String("op", op),
 			slog.String("method", c.Request.Method),
-			slog.String("path", c.FullPath()),
+			slog.String("path", route),
 			slog.Duration("took", time.Since(start)),
 		}
-		all := append(base, attrs...) // []slog.Attr
+		all := append(base, attrs...)
 		logger.Info("done "+op, toArgs(all)...)
 	}
 }
