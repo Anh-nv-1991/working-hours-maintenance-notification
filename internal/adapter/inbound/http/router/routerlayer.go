@@ -40,7 +40,8 @@ func New(p *pgxpool.Pool, baseLogger *slog.Logger, opt Options) *gin.Engine {
 	r.Use(requestid.New())
 	r.Use(middleware.OTelMiddleware("wh-ma-api"))
 	r.Use(middleware.RequestLogMiddleware(baseLogger)) // logger có request-id
-	r.Use(middleware.PrometheusHTTP())                 // đo count/latency/status cho mọi request
+	r.Use(middleware.PromMetrics())
+	r.Use(middleware.PrometheusHTTP()) // đo count/latency/status cho mọi request
 
 	// CORS
 	c := cors.DefaultConfig()

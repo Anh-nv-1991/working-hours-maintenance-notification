@@ -1,25 +1,24 @@
 receivers:
   otlp:
     protocols:
-      http:
-        endpoint: 0.0.0.0:4318
       grpc:
-        endpoint: 0.0.0.0:4317
+      http:
 
 processors:
-  batch: {}
+  batch:
 
 exporters:
-  # Gửi trace sang Jaeger all-in-one qua OTLP/HTTP (4318)
-  otlphttp:
-    endpoint: http://jaeger:4318
-  # (tuỳ chọn) In trace ra log collector để debug
-  debug:
-    verbosity: basic
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
 
 service:
+  extensions: [health_check]
   pipelines:
-    traces:
+    metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp, debug]
+      exporters: [prometheus]

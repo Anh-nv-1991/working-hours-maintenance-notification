@@ -1,75 +1,100 @@
+name: wh-ma
+
 services:
-  api:
-    build:
-      context: .
-      dockerfile: ./build/Dockerfile
-    env_file:
-      - ./configs/.env  # ⬅ chọn file env theo biến
-    depends_on:
-      db:
-        condition: service_healthy
-      otel-collector:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  otel-collector:
-    image: otel/opentelemetry-collector:0.118.0
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ${OTEL_CONFIG_FILE:-./configs/otel-collector.dev.yaml}:/etc/otel-collector-config.yaml:ro  # ⬅ chọn config theo biến
-    ports:
-      - "4318:4318"
-      - "4317:4317"
-      - "13133:13133"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:13133/ || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.60
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    ports:
-      - "16686:16686"
-    restart: unless-stopped
-
   db:
     image: postgres:16
+    container_name: wh-ma-db
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: Vietanh4791
       POSTGRES_DB: main-1
-    volumes:
-      - dbdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
-    restart: unless-stopped
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d main-1"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d \"main-1\""]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  migrate:
-    image: migrate/migrate:4
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.118.0
+    container_name: wh-ma-otel-collector
+    command: ["--config=/etc/otelcol/otel-collector-config.yaml"]
+    volumes:
+      - ./configs/otel-collector-config.yaml:/etc/otelcol/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+      - "13133:13133"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8889/metrics >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: wh-ma-prometheus
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./configs/alerts.rules.yml:/etc/prometheus/alerts.rules.yml:ro
+    ports:
+      - "9090:9090"
     depends_on:
-      db:
-        condition: service_healthy
+      - otel-collector
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: wh-ma-grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: wh-ma-jaeger
+    ports:
+      - "16686:16686" # UI
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:16686 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: build/Dockerfile
+    container_name: wh-ma-api
     env_file:
       - ./configs/.env
-    volumes:
-      - ./db/migrations:/migrations:ro
-    entrypoint: ["sh","-c","migrate -path=/migrations -database $${DATABASE_URL} up"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - otel-collector
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
 volumes:
-  dbdata: {}
+  db_data:
