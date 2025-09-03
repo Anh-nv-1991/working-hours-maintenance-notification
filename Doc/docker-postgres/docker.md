@@ -20,6 +20,10 @@ docker compose down -v     # xóa luôn volumes (cẩn thận mất DB)
 # Rebuild nhanh khi đổi code
 docker compose build api && docker compose up -d api
 
+# Rebuild với file .env
+docker compose --env-file ./configs/.env up -d --build
+
+
 # Dọn dẹp rác
 docker image prune -f
 docker builder prune -f

@@ -72,11 +72,34 @@ services:
     container_name: wh-ma-jaeger
     ports:
       - "16686:16686" # UI
+      - "14250:14250" # gRPC collector
+      - "14268:14268" # HTTP collector  
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:16686 >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 12
+
+  migrate:
+    image: migrate/migrate:v4.16.2   # hoặc :latest
+    # Chạy migrations "up"  (không phải "create")
+    command: [
+      "-path", "/migrations",
+      "-database", "${DATABASE_URL}",
+      "-verbose",
+      "up"
+    ]
+    env_file:
+      - ./configs/.env            # nơi có DATABASE_URL đã đúng host=db
+    volumes:
+      - ./db/migrations:/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
 
   api:
     build:
@@ -88,8 +111,10 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - db
-      - otel-collector
+      db:
+        condition: service_healthy    # ✅ khác so với file cũ: chờ DB healthy
+      otel-collector:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1"]
       interval: 10s

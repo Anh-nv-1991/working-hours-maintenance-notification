@@ -6,8 +6,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	mw "wh-ma/internal/adapter/inbound/http/middleware"
 	"wh-ma/internal/bootstrap"
 )
 
@@ -22,7 +22,11 @@ func main() {
 	// 3) Init OpenTelemetry (CẤY Ở ĐÂY)
 	// Hàm này nằm ở internal/bootstrap/otel.go (anh thêm theo mẫu trước đó)
 	tr := bootstrap.InitTracing(ctx, "wh-ma-api")
-	defer func() { _ = tr.Shutdown(ctx) }()
+	defer func() {
+		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tr.Shutdown(shCtx)
+	}()
 
 	// 4) DB pool (nếu đã gắn tracer trong NewPGXPool thì mọi query sẽ có span)
 	pool, err := bootstrap.NewPGXPool(ctx, cfg.DatabaseURL)
@@ -32,9 +36,6 @@ func main() {
 
 	// 5) Router
 	r := bootstrap.BuildRouter(cfg, pool, nil)
-
-	// 6) OTel HTTP middleware của anh (đảm bảo có span cho mọi route)
-	r.Use(mw.OTelMiddleware("wh-ma-api"))
 
 	// 7) Run HTTP (graceful)
 	if err := bootstrap.RunHTTP(r, cfg.Port); err != nil {
