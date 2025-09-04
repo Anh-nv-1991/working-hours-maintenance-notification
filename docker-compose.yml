@@ -3,15 +3,14 @@ name: wh-ma
 services:
   db:
     image: postgres:16
-    container_name: wh-ma-db
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: Vietanh4791
-      POSTGRES_DB: main-1
     ports:
-      - "5433:5432"
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - whma_pg:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d \"main-1\""]
       interval: 10s
@@ -87,7 +86,7 @@ services:
     volumes:
       - ./db/migrations:/migrations:ro
     env_file:
-      - ./configs/.env
+      - ./.env.staging
     # ENTRYPOINT của image đã là "migrate", nên chỉ cần truyền command (args)
     command: [
       "-path", "/migrations",
@@ -106,7 +105,7 @@ services:
       dockerfile: build/Dockerfile
     container_name: wh-ma-api
     env_file:
-      - ./configs/.env
+      - ./.env.staging
     ports:
       - "8080:8080"
     depends_on:
@@ -121,4 +120,4 @@ services:
       retries: 12
 
 volumes:
-  db_data:
+  whma_pg: {}
