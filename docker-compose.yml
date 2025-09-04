@@ -83,18 +83,17 @@ services:
       retries: 12
 
   migrate:
-    image: migrate/migrate:v4.16.2   # hoặc :latest
-    # Chạy migrations "up"  (không phải "create")
+    image: migrate/migrate:v4.16.2
+    volumes:
+      - ./db/migrations:/migrations:ro
+    env_file:
+      - ./configs/.env
+    # ENTRYPOINT của image đã là "migrate", nên chỉ cần truyền command (args)
     command: [
       "-path", "/migrations",
       "-database", "${DATABASE_URL}",
-      "-verbose",
-      "up"
+      "-verbose", "up"
     ]
-    env_file:
-      - ./configs/.env            # nơi có DATABASE_URL đã đúng host=db
-    volumes:
-      - ./db/migrations:/migrations:ro
     depends_on:
       db:
         condition: service_healthy

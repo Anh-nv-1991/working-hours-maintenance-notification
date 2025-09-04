@@ -1,25 +1,48 @@
-# syntax=docker/dockerfile:1.7-labs
+# =========================================
+# Stage 1: Builder (compile Go binary)
+# =========================================
+FROM golang:1.25-bookworm AS builder
 
-# 1) Base để tải module
-FROM golang:1.25 AS base
+# Workdir cho source
 WORKDIR /src
+
+# Tối ưu cache: copy mod trước, download deps
 COPY go.mod go.sum ./
-RUN go version
 RUN go mod download
 
-# 2) Builder: build nhị phân
-FROM base AS builder
-WORKDIR /src
+# Copy phần còn lại
 COPY . .
-# Dùng cache cho build cache và gomod cache (không cần COPY từ deps)
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/app ./cmd/server
 
-# 3) Final: distroless nonroot
-FROM gcr.io/distroless/static:nonroot AS final
-WORKDIR /app
-COPY --from=builder /out/app /app/app
-USER nonroot:nonroot
+# Tắt CGO để binary tĩnh, giảm phụ thuộc
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+
+# (Optional) nhúng version/commit vào binary khi cần
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+# Lưu ý: sửa main.package nếu biến version nằm chỗ khác
+RUN go build -trimpath -ldflags "-s -w -X main.commit=$GIT_SHA -X main.buildTime=$BUILD_TIME" \
+  -o /out/server ./cmd/server
+
+# =========================================
+# Stage 2: Runner (distroless, non-root)
+# =========================================
+# Dùng distroless base có sẵn CA certs & tzdata → an toàn cho TLS/OTEL
+FROM gcr.io/distroless/base-debian12:nonroot AS runner
+
+# Cổng mặc định app (theo .env)
 EXPOSE 8080
-ENTRYPOINT ["/app/app"]
+
+# Thư mục app chỉ đọc; distroless nonroot user = 65532
+WORKDIR /app
+
+# Copy binary từ builder
+COPY --from=builder /out/server /app/server
+
+# (Tùy chọn) set một số env "mặc định" ở runtime
+# ENV APP_ENV=docker PORT=8080
+
+# Chạy với user nonroot (distroless đã mặc định nonroot, set lại cho rõ ràng)
+USER nonroot:nonroot
+
+# Entrypoint
+ENTRYPOINT ["/app/server"]
