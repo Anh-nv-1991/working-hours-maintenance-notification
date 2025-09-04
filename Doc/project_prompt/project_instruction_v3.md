@@ -241,4 +241,4 @@
   
 - CI green; container runs as **non-root**.
   
-- Frontend web app can show system health + CRUD devices.
+- Frontend web app can show system health + CRUD devices. 

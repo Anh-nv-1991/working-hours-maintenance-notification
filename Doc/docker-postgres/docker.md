@@ -13,8 +13,8 @@ docker compose logs -f api
 docker compose logs -f db
 
 # Dừng / xóa
-docker compose stop
 docker compose down        # xóa network + container
+docker compose stop
 docker compose down -v     # xóa luôn volumes (cẩn thận mất DB)
 
 # Rebuild nhanh khi đổi code
@@ -71,6 +71,9 @@ docker compose build
 
 Bước 2: Chạy API + DB
 docker compose up
+
+# xoá rebuild docker
+docker system prune -a --volumes -f
 
 
 📌 Thêm -d nếu muốn chạy background:
