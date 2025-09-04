@@ -53,8 +53,9 @@ jobs:
 
       - name: Install tooling (sqlc, migrate)
         run: |
-          go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-          go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.1
+
 
       - name: Go vet
         run: go vet ./...
