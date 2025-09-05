@@ -1,0 +1,11 @@
+whmaht.duckdns.org {
+  encode gzip
+
+  # Chuyển /api → service 'api' cổng 8080 (Gin đang listen 8080 theo .env)
+  handle_path /api* {
+    reverse_proxy api:8080
+  }
+
+  # Trang gốc trả thông báo đơn giản (có thể thay bằng web sau)
+  respond / "WH-MA backend is up. Use /api/..." 200
+}

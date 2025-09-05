@@ -1,0 +1,24 @@
+name: wh-ma
+services:
+  reverse-proxy:
+    image: caddy:2
+    ports: ["80:80","443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # API: KHÔNG map port ra ngoài; chỉ expose nội bộ docker
+  api:
+    # nếu service api đã có trong docker-compose.yml, KHÔNG cần lặp lại toàn bộ.
+    # Ở file prod này, chỉ cần chắc chắn api 'expose' 8080 (không 'ports')
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
