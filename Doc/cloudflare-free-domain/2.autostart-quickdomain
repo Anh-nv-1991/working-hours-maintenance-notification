@@ -1,0 +1,63 @@
+# ✅ Hướng dẫn dùng **Cloudflare Quick Tunnel** (demo/test)
+
+### 1. Chuẩn bị
+
+- Windows + Docker Desktop đã chạy API container.
+
+- File `cloudflared.exe` đã tải về ở:
+  
+  `C:\cloudflared\cloudflared.exe`
+
+### 2. Kiểm tra API trong Docker
+
+Đảm bảo container API đã map port `8080:8080`.
+
+`docker ps --format "table {{.Names}}\t{{.Ports}}"`
+
+Test từ host:
+
+`Invoke-WebRequest http://localhost:8080/healthz`
+
+Kết quả phải là:
+
+`{"ok":true,"service":"wh-ma", ...}`
+
+---
+
+### 3. Mở Quick Tunnel
+
+Chạy lệnh:
+
+``C:\cloudflared\cloudflared.exe tunnel --no-autoupdate --edge-ip-version auto `   --url http://localhost:8080 --loglevel info``
+
+👉 Cloudflare sẽ in ra URL dạng:
+
+`https://<random-string>.trycloudflare.com`
+
+---
+
+### 4. Test từ bên ngoài
+
+- Trên chính máy host:
+  
+  `Invoke-WebRequest https://<random>.trycloudflare.com/healthz`
+
+- Trên điện thoại/4G: mở URL → thấy JSON `{ "ok": true, ... }`.
+
+---
+
+### 5. Lưu ý vận hành
+
+- Quick Tunnel **tạm thời**: mỗi lần restart URL sẽ khác.
+
+- Cửa sổ PowerShell chạy tunnel phải được giữ mở. Đóng cửa sổ = mất tunnel.
+
+- Khi cần dừng tunnel:
+  
+  `Get-Process cloudflared | Stop-Process -Force`
+
+---
+
+### 6. Lệnh mẫu (ACE copy nhanh)
+
+`# kiểm tra API trong host Invoke-WebRequest http://localhost:8080/healthz # mở quick tunnel C:\cloudflared\cloudflared.exe tunnel --no-autoupdate --url http://localhost:8080 # (tuỳ chọn) ép dùng HTTP/2 nếu mạng chặn QUIC C:\cloudflared\cloudflared.exe tunnel --no-autoupdate --protocol http2 --url http://localhost:8080 --l`
