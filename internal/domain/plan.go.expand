@@ -1,0 +1,159 @@
+#package domain
+
+import "time"
+
+// ==== Strongly typed IDs ====
+type PlanVersion int32
+
+// ==== PlanStatus (tuỳ chọn) ====
+type PlanStatus string
+
+const (
+	PlanDraft    PlanStatus = "draft"
+	PlanActive   PlanStatus = "active"
+	PlanArchived PlanStatus = "archived"
+)
+
+// ==== Severity cho cảnh báo (mở rộng tuỳ UI/ops) ====
+type Severity string
+
+const (
+	SeverityInfo     Severity = "info"
+	SeverityWarning  Severity = "warning"
+	SeverityCritical Severity = "critical"
+)
+
+// ==== Rule tính bảo dưỡng theo giờ ====
+type PlanRule struct {
+	// Ví dụ 250/500/1000 giờ
+	IntervalHours int
+
+	// Khoảng "ân hạn" trước hạn (âm) / sau hạn (dương) để điều khiển cảnh báo mềm
+	// Ví dụ: PreAlertHours=24 => cảnh báo trước 24h dự kiến chạm mốc
+	//        GraceOverdueHours=48 => quá 48h mới nâng mức cảnh báo
+	PreAlertHours     int // cảnh báo sớm
+	GraceOverdueHours int // quá hạn "chịu đựng" trước khi nâng mức
+
+	// Mức độ cảnh báo đề xuất khi đến hạn/quá hạn
+	DueSeverity     Severity
+	OverdueSeverity Severity
+
+	// Mô tả rule (để UI/ops đọc hiểu)
+	Description string
+
+	// Future-proof: cost ước lượng, nhóm công việc, phụ tùng chính...
+	EstimatedCost float64
+	TaskGroup     string
+	SpareHint     string
+
+	// Cho phép vô hiệu hoá tạm thời rule (ví dụ mùa mưa)
+	Disabled bool
+}
+
+// ==== Plan (tập hợp các rule) ====
+type Plan struct {
+	ID          PlanID
+	Name        string
+	Description *string
+
+	// Versioning & lineage
+	Version  PlanVersion
+	ParentID *PlanID // nếu đây là bản fork/derived từ plan khác
+
+	// Hiệu lực thời gian (để chuyển đổi có kiểm soát)
+	ActiveFrom *time.Time
+	ActiveTo   *time.Time
+	Status     PlanStatus
+
+	// Các rule theo mốc giờ
+	Rules []PlanRule
+
+	// Chính sách chung (áp cho toàn plan) - optional
+	DefaultPreAlertHours     int
+	DefaultGraceOverdueHours int
+
+	// Metadata mở rộng (labels, owner, team, loại thiết bị…)
+	Tags map[string]string
+
+	// Audit
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time
+	CreatedBy string
+	UpdatedBy string
+	DeletedBy *string
+}
+
+// ==== Helper: kiểm tra hiệu lực theo thời gian ====
+func (p *Plan) IsActive(at time.Time) bool {
+	if p.Status != PlanActive {
+		return false
+	}
+	if p.ActiveFrom != nil && at.Before(*p.ActiveFrom) {
+		return false
+	}
+	if p.ActiveTo != nil && at.After(*p.ActiveTo) {
+		return false
+	}
+	return true
+}
+
+// ==== Helper: áp dụng default cho rule nếu chưa set ====
+func (p *Plan) EffectivePreAlertHours(rule PlanRule) int {
+	if rule.PreAlertHours != 0 {
+		return rule.PreAlertHours
+	}
+	return p.DefaultPreAlertHours
+}
+
+func (p *Plan) EffectiveGraceOverdueHours(rule PlanRule) int {
+	if rule.GraceOverdueHours != 0 {
+		return rule.GraceOverdueHours
+	}
+	return p.DefaultGraceOverdueHours
+}
+
+// ==== Projection đơn giản để tính "còn bao nhiêu giờ tới hạn" ====
+// totalHours: TWH hiện tại (lifetime hoặc sau mốc đại tu tuỳ chiến lược)
+// countersDone: số lần đã làm ở interval đó (để biết target tiếp theo)
+// Trả về: nextTarget (mốc giờ tiếp theo), remain (còn bao nhiêu giờ), nil nếu rule disabled.
+func (p *Plan) NextDueForRule(rule PlanRule, totalHours int, countersDone int) (nextTarget int, remain int, ok bool) {
+	if rule.Disabled || rule.IntervalHours <= 0 {
+		return 0, 0, false
+	}
+	nextTarget = rule.IntervalHours * (countersDone + 1)
+	remain = nextTarget - totalHours
+	return nextTarget, remain, true
+}
+
+// ==== Gợi ý tổng hợp cho toàn Plan ====
+// Duyệt tất cả rules, trả về rule gần nhất sắp đến hạn (remain nhỏ nhất nhưng >= 0)
+// totalHours: như trên; map interval -> countersDone
+type NextDueResult struct {
+	Rule            PlanRule
+	NextTargetHours int
+	RemainHours     int
+}
+
+func (p *Plan) NearestNextDue(totalHours int, counters map[int]int) *NextDueResult {
+	var best *NextDueResult
+	for _, r := range p.Rules {
+		next, remain, ok := p.NextDueForRule(r, totalHours, counters[r.IntervalHours])
+		if !ok {
+			continue
+		}
+		if remain < 0 {
+			// đã quá hạn: vẫn có thể coi là "nearest", tuỳ chiến lược UI
+			continue
+		}
+		if best == nil || remain < best.RemainHours {
+			cp := r // tránh alias
+			best = &NextDueResult{
+				Rule:            cp,
+				NextTargetHours: next,
+				RemainHours:     remain,
+			}
+		}
+	}
+	return best
+}

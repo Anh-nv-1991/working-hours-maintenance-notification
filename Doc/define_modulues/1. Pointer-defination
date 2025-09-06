@@ -1,0 +1,48 @@
+## 1. Khái niệm con trỏ (Pointer)
+
+- **Con trỏ = biến lưu địa chỉ ô nhớ của biến khác**.
+
+- Thay vì lưu **giá trị**, nó lưu **địa chỉ**.
+
+👉 Nói dễ hiểu: thay vì đưa bạn cái bánh (giá trị), mình đưa bạn **cái địa chỉ quán bán bánh** (con trỏ).  
+Bạn cầm địa chỉ đó → đi tới quán → lấy bánh thật sự.
+
+---
+
+## 2. Trong Go
+
+- Toán tử `&` → lấy địa chỉ của biến (tạo pointer).
+
+- Toán tử `*` → truy cập (giải tham chiếu) giá trị tại địa chỉ mà pointer trỏ tới.
+
+Ví dụ cơ bản:
+
+`package main  import "fmt"  func main() {     x := 10       // biến thường     p := &x       // p là *int, trỏ tới x      fmt.Println("Giá trị x:", x)   // 10     fmt.Println("Địa chỉ của x:", &x)     fmt.Println("Giá trị của p:", p)   // cũng là địa chỉ của x     fmt.Println("Giá trị *p:", *p)     // 10 (lấy giá trị tại địa chỉ p)      // Sửa giá trị qua con trỏ     *p = 99     fmt.Println("Sau khi *p=99, x:", x) // x đổi thành 99 }`
+
+---
+
+## 3. Vì sao cần con trỏ?
+
+- **Tránh copy dữ liệu lớn**: truyền địa chỉ thay vì copy cả struct/array.
+
+- **Cho phép thay đổi giá trị gốc** khi truyền vào hàm.
+
+- **Quản lý object sống lâu** (ví dụ `User` trong repo, lưu map[string]*User để sửa trực tiếp).
+
+Ví dụ khi truyền vào hàm:
+
+`func updateValue(n *int) {     *n = *n + 1 }  func main() {     x := 5     updateValue(&x)     fmt.Println(x) // 6 (thay đổi giá trị gốc) }`
+
+Nếu truyền `int` thường, Go chỉ copy → `x` không thay đổi.
+
+---
+
+## 4. Tóm gọn
+
+- Con trỏ là “tấm bản đồ” chỉ đến chỗ biến đang nằm trong bộ nhớ.
+
+- `&` = lấy địa chỉ.
+
+- `*` = vào địa chỉ để đọc/ghi giá trị.
+
+- Dùng khi: muốn sửa dữ liệu gốc, muốn tối ưu hiệu năng (không copy nhiều).

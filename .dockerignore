@@ -1,0 +1,26 @@
+# build artifacts
+/out
+/bin
+/dist
+*.exe
+*.test
+
+# VCS
+.git
+.gitignore
+
+# IDE/Editors
+.vscode
+.idea
+
+# Caches
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+node_modules
+tmp
+.DS_Store
+
+# Secrets - đừng copy .env vào image (compose sẽ inject ở runtime)
+.env
+.env.*

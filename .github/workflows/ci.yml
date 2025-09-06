@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Giữ đồng bộ với .env của dự án
+  DB_HOST: localhost
+  DB_PORT: "5432"
+  DB_NAME: main-1
+  DB_USER: admin
+  DB_PASSWORD: Vietanh4791
+  DATABASE_URL: postgres://admin:Vietanh4791@localhost:5432/main-1?sslmode=disable
+  GO_VERSION: "1.25"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ${{ env.DB_USER }}
+          POSTGRES_PASSWORD: ${{ env.DB_PASSWORD }}
+          POSTGRES_DB: ${{ env.DB_NAME }}
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd="pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: Go mod download (warm cache)
+        run: go mod download
+
+      - name: Install tooling (sqlc, migrate)
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.1
+
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go test
+        run: go test ./... -v -count=1
+
+      - name: SQLC generate
+        run: sqlc generate
+
+      - name: Ensure generated code committed (optional, fail if dirty)
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::Uncommitted changes after 'sqlc generate'. Commit generated code."
+            git --no-pager diff
+            exit 1
+          fi
+
+      # "Dry-run" migration: apply lên DB CI rồi rollback sạch
+      - name: Migrate up (apply all)
+        run: |
+          migrate -path db/migrations -database "$DATABASE_URL" up
+      - name: Migrate down (rollback all)
+        if: always()
+        run: |
+          migrate -path db/migrations -database "$DATABASE_URL" down -all

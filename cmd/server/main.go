@@ -3,48 +3,42 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
+	"wh-ma/internal/bootstrap"
 )
 
 func main() {
-	_ = godotenv.Load("configs/.env") // chỉ định file
-	dsn := os.Getenv("DATABASE_URL")
-	ctx := context.Background()
+	// 1) Context + signal
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		log.Fatalf("db pool: %v", err)
-	}
-	defer pool.Close()
+	// 2) Load config (đã có trong bootstrap)
+	cfg := bootstrap.LoadConfig()
 
-	if os.Getenv("APP_ENV") == "prod" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-	r := gin.New()
-	r.Use(gin.Recovery(), gin.Logger())
-
-	r.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true, "env": os.Getenv("APP_ENV")})
-	})
-	r.GET("/readiness", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	// 3) Init OpenTelemetry (CẤY Ở ĐÂY)
+	// Hàm này nằm ở internal/bootstrap/otel.go (anh thêm theo mẫu trước đó)
+	tr := bootstrap.InitTracing(ctx, "wh-ma-api")
+	defer func() {
+		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := pool.Ping(ctx); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "db": "down"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"ok": true, "db": "up"})
-	})
+		_ = tr.Shutdown(shCtx)
+	}()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// 4) DB pool (nếu đã gắn tracer trong NewPGXPool thì mọi query sẽ có span)
+	pool, err := bootstrap.NewPGXPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("db connect: %v", err)
 	}
-	_ = r.Run(":" + port)
+
+	// 5) Router
+	r := bootstrap.BuildRouter(cfg, pool, nil)
+
+	// 7) Run HTTP (graceful)
+	if err := bootstrap.RunHTTP(r, cfg.Port); err != nil {
+		log.Fatalf("http: %v", err)
+	}
 }

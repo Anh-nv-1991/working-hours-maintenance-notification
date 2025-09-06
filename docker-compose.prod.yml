@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  caddy:
+    image: caddy:2
+    container_name: whma-caddy
+    ports:
+      - "8081:8081"            # 1 URL qua cổng 8081
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    restart: unless-stopped

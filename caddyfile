@@ -1,0 +1,13 @@
+:8081 {
+  encode zstd gzip
+
+  # API giữ nguyên prefix /api
+  @api path /api*
+  handle @api {
+    reverse_proxy http://host.docker.internal:8080
+    # reverse_proxy http://api:8080   # nếu API chạy trong compose cùng mạng
+  }
+
+  # UI Next.js đang chạy 3001
+  reverse_proxy http://host.docker.internal:3001
+}

@@ -1,0 +1,255 @@
+name: wh-ma
+services:
+  api:
+    build:
+      context: E:\VietAnh-6689\Projects\working_hours_maintenance_notification
+      dockerfile: build/Dockerfile
+    container_name: wh-ma-api
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+      otel-collector:
+        condition: service_started
+        required: true
+    environment:
+      APP_ENV: docker
+      DATABASE_URL: postgres://admin:Vietanh4791@db:5432/main-1?sslmode=disable
+      DB_CONN_MAX_LIFETIME: 300s
+      DB_HOST: db
+      DB_MAX_IDLE_CONNS: "5"
+      DB_MAX_OPEN_CONNS: "25"
+      DB_NAME: main-1
+      DB_PASSWORD: Vietanh4791
+      DB_PORT: "5432"
+      DB_USER: admin
+      JWT_EXPIRE_HOURS: "24"
+      JWT_SECRET: change-me-in-prod
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_RESOURCE_ATTRIBUTES: service.name=wh-ma-api,deployment.environment=docker
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
+      PORT: "8080"
+      REDIS_URL: redis://:redis123@localhost:6379/0
+      UPLOAD_MAX_SIZE_BYTES: "10485760"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://localhost:8080/healthz >/dev/null 2>&1
+      timeout: 5s
+      interval: 10s
+      retries: 12
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8080
+        published: "8080"
+        protocol: tcp
+  db:
+    container_name: wh-ma-db
+    environment:
+      POSTGRES_DB: main-1
+      POSTGRES_PASSWORD: Vietanh4791
+      POSTGRES_USER: admin
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U admin -d "main-1"
+      timeout: 5s
+      interval: 10s
+      retries: 10
+    image: postgres:16
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 5432
+        published: "5433"
+        protocol: tcp
+    volumes:
+      - type: volume
+        source: db_data
+        target: /var/lib/postgresql/data
+        volume: {}
+  grafana:
+    container_name: wh-ma-grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+        required: true
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://localhost:3000/api/health >/dev/null 2>&1
+      timeout: 5s
+      interval: 10s
+      retries: 12
+    image: grafana/grafana:10.4.3
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3000
+        published: "3000"
+        protocol: tcp
+  jaeger:
+    container_name: wh-ma-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://localhost:16686 >/dev/null 2>&1
+      timeout: 5s
+      interval: 10s
+      retries: 12
+    image: jaegertracing/all-in-one:1.60
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 16686
+        published: "16686"
+        protocol: tcp
+      - mode: ingress
+        target: 14250
+        published: "14250"
+        protocol: tcp
+      - mode: ingress
+        target: 14268
+        published: "14268"
+        protocol: tcp
+  migrate:
+    command:
+      - migrate
+      - -path
+      - /migrations
+      - -database
+      - ""
+      - -verbose
+      - up
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+    entrypoint:
+      - sh
+      - -lc
+    environment:
+      APP_ENV: docker
+      DATABASE_URL: postgres://admin:Vietanh4791@db:5432/main-1?sslmode=disable
+      DB_CONN_MAX_LIFETIME: 300s
+      DB_HOST: db
+      DB_MAX_IDLE_CONNS: "5"
+      DB_MAX_OPEN_CONNS: "25"
+      DB_NAME: main-1
+      DB_PASSWORD: Vietanh4791
+      DB_PORT: "5432"
+      DB_USER: admin
+      JWT_EXPIRE_HOURS: "24"
+      JWT_SECRET: change-me-in-prod
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_RESOURCE_ATTRIBUTES: service.name=wh-ma-api,deployment.environment=docker
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
+      PORT: "8080"
+      REDIS_URL: redis://:redis123@localhost:6379/0
+      UPLOAD_MAX_SIZE_BYTES: "10485760"
+    image: migrate/migrate:4
+    networks:
+      default: null
+    restart: "no"
+    volumes:
+      - type: bind
+        source: E:\VietAnh-6689\Projects\working_hours_maintenance_notification\db\migrations
+        target: /migrations
+        read_only: true
+        bind:
+          create_host_path: true
+  otel-collector:
+    command:
+      - --config=/etc/otelcol/otel-collector-config.yaml
+    container_name: wh-ma-otel-collector
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://localhost:8889/metrics >/dev/null 2>&1
+      timeout: 5s
+      interval: 10s
+      retries: 12
+    image: otel/opentelemetry-collector-contrib:0.118.0
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 4317
+        published: "4317"
+        protocol: tcp
+      - mode: ingress
+        target: 4318
+        published: "4318"
+        protocol: tcp
+      - mode: ingress
+        target: 8889
+        published: "8889"
+        protocol: tcp
+      - mode: ingress
+        target: 13133
+        published: "13133"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: E:\VietAnh-6689\Projects\working_hours_maintenance_notification\configs\otel-collector-config.yaml
+        target: /etc/otelcol/otel-collector-config.yaml
+        read_only: true
+        bind:
+          create_host_path: true
+  prometheus:
+    container_name: wh-ma-prometheus
+    depends_on:
+      otel-collector:
+        condition: service_started
+        required: true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://localhost:9090/-/ready >/dev/null 2>&1
+      timeout: 5s
+      interval: 10s
+      retries: 12
+    image: prom/prometheus:v2.53.0
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 9090
+        published: "9090"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: E:\VietAnh-6689\Projects\working_hours_maintenance_notification\configs\prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+        bind:
+          create_host_path: true
+      - type: bind
+        source: E:\VietAnh-6689\Projects\working_hours_maintenance_notification\configs\alerts.rules.yml
+        target: /etc/prometheus/alerts.rules.yml
+        read_only: true
+        bind:
+          create_host_path: true
+networks:
+  default:
+    name: wh-ma_default
+volumes:
+  db_data:
+    name: wh-ma_db_data
+
