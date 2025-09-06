@@ -1,11 +1,13 @@
-whmaht.duckdns.org {
-  encode gzip
+:8081 {
+  encode zstd gzip
 
-  # Chuyển /api → service 'api' cổng 8080 (Gin đang listen 8080 theo .env)
-  handle_path /api* {
-    reverse_proxy api:8080
+  # API giữ nguyên prefix /api
+  @api path /api*
+  handle @api {
+    reverse_proxy http://host.docker.internal:8080
+    # reverse_proxy http://api:8080   # nếu API chạy trong compose cùng mạng
   }
 
-  # Trang gốc trả thông báo đơn giản (có thể thay bằng web sau)
-  respond / "WH-MA backend is up. Use /api/..." 200
+  # UI Next.js đang chạy 3001
+  reverse_proxy http://host.docker.internal:3001
 }
